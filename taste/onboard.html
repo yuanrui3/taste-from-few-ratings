@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Taste in 40 ratings</title>
+<style>
+  :root { --bg: #f4f4f2; --fg: #1d1d1b; --muted: #6b6b66; --line: #d9d9d4; --accent: #2c5d8f; --card: #fff; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #161615; --fg: #ecece8; --muted: #9a9a94; --line: #34342f; --accent: #7fb0e0; --card: #20201e; } }
+  :root[data-theme="dark"] { --bg: #161615; --fg: #ecece8; --muted: #9a9a94; --line: #34342f; --accent: #7fb0e0; --card: #20201e; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.45 -apple-system, system-ui, sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line); padding: 10px 16px; }
+  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .progress { flex: 1; min-width: 160px; }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+  .bar > div { height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+  .scale { display: flex; gap: 4px; flex-wrap: wrap; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--fg); border-radius: 6px; padding: 8px 0; min-width: 40px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.flash { background: var(--accent); color: var(--bg); }
+  button:disabled { opacity: .45; cursor: default; }
+  .ghost { padding: 8px 12px; color: var(--muted); }
+  .primary { padding: 8px 14px; background: var(--accent); color: var(--bg); border-color: var(--accent); }
+  .hint { color: var(--muted); font-size: 13px; }
+  main { padding: 12px 16px 48px; max-width: 1200px; margin: 0 auto; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(230px, 45vw), 1fr)); gap: 8px; }
+  .grid img { width: 100%; height: min(42vh, 360px); object-fit: contain; background: #808080; border-radius: 4px; display: block; }
+  .intro { max-width: 640px; margin: 40px auto; }
+  .intro h1 { font-size: 24px; margin: 0 0 10px; }
+  .intro p { color: var(--muted); }
+  h2 { font-size: 17px; margin: 26px 0 10px; }
+  .people { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+  .person { position: relative; }
+  .person img { width: 100%; aspect-ratio: 3 / 4; object-fit: contain; background: #808080; border-radius: 4px; display: block; }
+  .person span { position: absolute; left: 6px; top: 6px; background: rgba(0,0,0,.6); color: #fff; font-size: 12px; padding: 1px 6px; border-radius: 4px; font-variant-numeric: tabular-nums; }
+  .check { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin: 14px 0; }
+  .check b { font-variant-numeric: tabular-nums; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header id="bar" class="hidden">
+  <div class="row">
+    <div class="progress"><span id="count"></span><div class="bar"><div id="fill"></div></div></div>
+    <div class="scale" id="scale"></div>
+    <button class="ghost" id="back" title="Undo the last rating (Backspace)">Back</button>
+    <button class="primary" id="finish" disabled title="Needs at least 5 ratings">Show predictions</button>
+  </div>
+  <div class="hint">Rate the person's appearance 0–10. Keys: 0–9, T = 10, Backspace = back.</div>
+</header>
+<main>
+  <section id="intro" class="intro">
+    <h1>Your taste in 40 ratings</h1>
+    <p>You rate 40 people, chosen to cover the whole pool; it takes about 4 minutes. The model starts from a crowd face-beauty score (from public research ratings of studio faces, read through two kinds of face codes) and leans on your ratings more as you give them (after 20, half crowd and half you; after 40, two thirds you), then ranks everyone you did not rate.</p>
+    <p>Forty is where each extra rating stops paying much. You can stop earlier with Show predictions; 20 is the useful minimum.</p>
+    <p>Your ratings stay in this browser; nothing is sent anywhere.</p>
+    <button class="primary" id="start">Start</button>
+  </section>
+  <section id="rate" class="hidden"><div class="grid" id="grid"></div></section>
+  <section id="result" class="hidden">
+    <div class="row"><button class="ghost" id="again">Rate again</button><button class="ghost" id="save" title="Download your ratings as a small file (opaque ids and numbers only)">Save my ratings</button><span class="hint" id="summary"></span></div>
+    <div class="check" id="check"></div>
+    <h2>Predicted highest</h2>
+    <div class="people" id="top"></div>
+    <h2>Predicted lowest</h2>
+    <div class="people" id="bottom"></div>
+  </section>
+</main>
+<script>
+// ---- model: ridge in kernel form (centred, strength by leave-one-out), rank blend with the crowd score ----
+const ALPHAS = Array.from({length: 25}, (_, i) => Math.pow(10, -1 + 6 * i / 24));
+function solveInv(A) {  // inverse of a small symmetric positive-definite matrix (Gauss-Jordan)
+  const n = A.length, M = A.map((r, i) => [...r, ...Array.from({length: n}, (_, j) => +(i === j))]);
+  for (let c = 0; c < n; c++) {
+    let p = c; for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    [M[c], M[p]] = [M[p], M[c]];
+    const d = M[c][c]; for (let j = 0; j < 2 * n; j++) M[c][j] /= d;
+    for (let r = 0; r < n; r++) if (r !== c) { const f = M[r][c]; if (f) for (let j = 0; j < 2 * n; j++) M[r][j] -= f * M[c][j]; }
+  }
+  return M.map(r => r.slice(n));
+}
+function ranks(v) {  // average ranks, 1-based (as scipy rankdata)
+  const o = v.map((x, i) => [x, i]).sort((a, b) => a[0] - b[0]), r = new Array(v.length);
+  for (let i = 0; i < o.length;) { let j = i; while (j + 1 < o.length && o[j + 1][0] === o[i][0]) j++; for (let k = i; k <= j; k++) r[o[k][1]] = (i + j) / 2 + 1; i = j + 1; }
+  return r;
+}
+function spearman(a, b) {
+  const ra = ranks(a), rb = ranks(b), n = a.length, ma = ra.reduce((s, x) => s + x, 0) / n, mb = rb.reduce((s, x) => s + x, 0) / n;
+  let sab = 0, saa = 0, sbb = 0; for (let i = 0; i < n; i++) { sab += (ra[i] - ma) * (rb[i] - mb); saa += (ra[i] - ma) ** 2; sbb += (rb[i] - mb) ** 2; }
+  return sab / Math.sqrt(saa * sbb);
+}
+function predict(D, rated) {  // rated: {index: rating}
+  const S = Object.keys(rated).map(Number), n = S.length, N = D.ids.length;
+  const rest = [...Array(N).keys()].filter(i => !(i in rated));
+  const pc = ranks(rest.map(i => D.crowd[i])).map(r => r / rest.length);
+  if (n < 3 || new Set(Object.values(rated)).size < 2) return {rest, score: pc, alpha: null};
+  const K = D.gram, y = S.map(i => rated[i]), ym = y.reduce((s, x) => s + x, 0) / n, yc = y.map(v => v - ym);
+  const rS = S.map(i => S.reduce((s, j) => s + K[i][j], 0) / n), m = rS.reduce((s, x) => s + x, 0) / n;
+  const Kc = S.map((i, a) => S.map((j, b) => K[i][j] - rS[a] - rS[b] + m));
+  let best = null;
+  for (const al of ALPHAS) {
+    const a = al / D.dim, Ainv = solveInv(Kc.map((r, i) => r.map((v, j) => v + (i === j ? a : 0))));
+    const c = Ainv.map(r => r.reduce((s, v, j) => s + v * yc[j], 0));
+    let err = 0; for (let i = 0; i < n; i++) { const g = Ainv[i][i] - 1 / (n * a); err += (c[i] / g) ** 2; }
+    if (!best || err < best.err - 1e-12) best = {err, c, al};
+  }
+  const pred = rest.map(e => { const re = S.reduce((s, j) => s + K[e][j], 0) / n; return ym + S.reduce((s, i, a) => s + best.c[a] * (K[e][i] - re - rS[a] + m), 0); });
+  const pr = ranks(pred).map(r => r / rest.length), w = n / (n + D.k_blend);
+  return {rest, score: pc.map((v, i) => (1 - w) * v + w * pr[i]), alpha: best.al};
+}
+window.TASTE = {predict, spearman, ranks};
+
+// ---- page ----
+const $ = id => document.getElementById(id);
+let D = null, nImg = {}, probes = [], pos = 0, ratings = {}, posOf = {};
+for (let v = 0; v <= 10; v++) { const b = document.createElement('button'); b.textContent = v; b.id = 'r' + v; b.onclick = () => rate(v); $('scale').appendChild(b); }
+const N_PROBES = 40, STORE = 'onboard';
+function save() { try { localStorage.setItem(STORE, JSON.stringify({pos, ratings})); } catch (e) {} }
+function show() {
+  const total = probes.length;
+  $('count').textContent = `${Math.min(pos + 1, total)} of ${total}`;
+  $('fill').style.width = (100 * pos / total) + '%';
+  $('finish').disabled = Object.keys(ratings).length < 5;
+  if (pos >= total) return finish();
+  const id = probes[pos], g = $('grid'); g.innerHTML = '';
+  for (let k = 0; k < (nImg[id] || 1); k++) { const im = new Image(); im.alt = ''; im.src = `thumbs/${id}/${k}.jpg`; g.appendChild(im); }
+  const nx = probes[pos + 1]; if (nx) for (let k = 0; k < (nImg[nx] || 1); k++) new Image().src = `thumbs/${nx}/${k}.jpg`;
+  window.scrollTo(0, 0);
+}
+function rate(v) {
+  if ($('rate').classList.contains('hidden') || pos >= probes.length) return;
+  const b = $('r' + v); b.classList.add('flash'); setTimeout(() => b.classList.remove('flash'), 150);
+  ratings[probes[pos]] = v; pos++; save(); show();
+}
+function back() { if (pos === 0) return; pos--; delete ratings[probes[pos]]; save(); $('rate').classList.remove('hidden'); $('result').classList.add('hidden'); show(); }
+function person(id, label) { return `<div class="person"><img loading="lazy" alt="" src="thumbs/${id}/0.jpg"><span>${label}</span></div>`; }
+function finish() {
+  const rated = {}; for (const [id, v] of Object.entries(ratings)) rated[posOf[id]] = v;
+  const {rest, score} = predict(D, rated), n = Object.keys(rated).length;
+  const order = rest.map((i, k) => [i, score[k]]).sort((a, b) => b[1] - a[1]);
+  $('top').innerHTML = order.slice(0, 24).map(([i], k) => person(D.ids[i], '#' + (k + 1))).join('');
+  $('bottom').innerHTML = order.slice(-12).map(([i], k) => person(D.ids[i], '#' + (order.length - 11 + k))).join('');
+  $('summary').textContent = `${n} ratings · weight on your ratings ${(n / (n + D.k_blend)).toFixed(2)}, crowd ${(D.k_blend / (n + D.k_blend)).toFixed(2)}`;
+  const have = rest.map((i, k) => [D.earlier[D.ids[i]], score[k]]).filter(p => p[0] != null);
+  const crowdOnly = spearman(have.map(p => p[0]), rest.filter(i => D.earlier[D.ids[i]] != null).map(i => D.crowd[i]));
+  $('check').innerHTML = `If you are the person who rated the whole pool: these predictions agree with your earlier ratings of the other ${have.length} people at <b>${spearman(have.map(p => p[1]), have.map(p => p[0])).toFixed(2)}</b> (Spearman; crowd score alone: <b>${crowdOnly.toFixed(2)}</b>; the tests expect about 0.48 after 20 ratings and 0.55 after 40). For anyone else this number means nothing.`;
+  $('bar').classList.add('hidden'); $('rate').classList.add('hidden'); $('result').classList.remove('hidden'); window.scrollTo(0, 0);
+}
+$('back').onclick = back; $('finish').onclick = finish;
+$('save').onclick = () => {  // for members who contribute their ratings: opaque ids and numbers only
+  const blob = new Blob([JSON.stringify({format: 'taste-ratings-1', saved: new Date().toISOString(), ratings}, null, 1)], {type: 'application/json'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'taste_ratings.json';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+$('start').onclick = () => { $('intro').classList.add('hidden'); $('bar').classList.remove('hidden'); $('rate').classList.remove('hidden'); show(); };
+$('again').onclick = () => { pos = 0; ratings = {}; save(); $('result').classList.add('hidden'); $('bar').classList.remove('hidden'); $('rate').classList.remove('hidden'); show(); };
+document.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (/^[0-9]$/.test(e.key)) rate(+e.key);
+  else if (e.key === 't' || e.key === 'T') rate(10);
+  else if (e.key === 'Backspace') { e.preventDefault(); back(); }
+});
+(async () => {
+  D = await (await fetch('onboard_data.json')).json();
+  D.ids.forEach((id, i) => posOf[id] = i);
+  for (const it of await (await fetch('items.json')).json()) nImg[it.id] = it.n;
+  probes = D.probes.slice(0, N_PROBES);
+  // earlier versions asked for 20 and saved under 'onboard20'; those ratings carry over
+  try { const s = JSON.parse(localStorage.getItem(STORE) || localStorage.getItem('onboard20') || 'null'); if (s && s.ratings) { ratings = s.ratings; pos = Math.min(s.pos || 0, probes.length); } } catch (e) {}
+})();
+</script>
+</body>
+</html>

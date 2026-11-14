@@ -1,0 +1,17 @@
+# Data never goes into this repository: photos, cut-outs, ratings, features, results, datasets, models
+photos/
+cut/
+site/
+split/
+results/
+datasets/
+models/
+logs/
+venv/
+mebatch*/
+arc/
+*.npz
+*.jsonl
+ratings*.json
+__pycache__/
+.DS_Store

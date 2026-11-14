@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this code or its findings, please cite it as below."
+title: "Taste from few ratings: learning one person's taste in appearance from forty ratings"
+type: software
+authors:
+  - alias: "yuanrui3"
+date-released: 2026-11-14
+repository-code: "https://github.com/yuanrui3/taste-from-few-ratings"
+keywords:
+  - personalized preference learning
+  - few-shot learning
+  - facial attractiveness
+  - CLIP
+  - SigLIP
+  - kernel herding
+  - pre-registration
+license: MIT

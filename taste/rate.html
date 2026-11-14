@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Appearance ratings</title>
+<style>
+  :root { --bg: #f4f4f2; --fg: #1d1d1b; --muted: #6b6b66; --line: #d9d9d4; --accent: #2c5d8f; --card: #fff; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #161615; --fg: #ecece8; --muted: #9a9a94; --line: #34342f; --accent: #7fb0e0; --card: #20201e; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.4 -apple-system, system-ui, sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line); padding: 10px 16px; }
+  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .progress { flex: 1; min-width: 160px; }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+  .bar > div { height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+  .scale { display: flex; gap: 4px; flex-wrap: wrap; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--fg); border-radius: 6px; padding: 8px 0; min-width: 40px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.flash { background: var(--accent); color: var(--bg); }
+  .tags { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tags button { padding: 6px 10px; font-size: 13px; color: var(--muted); }
+  .tags button.on { background: #b3412f; border-color: #b3412f; color: #fff; }
+  .ghost { padding: 8px 12px; color: var(--muted); }
+  .hint { color: var(--muted); font-size: 13px; }
+  main { padding: 12px 16px 40px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(230px, 45vw), 1fr)); gap: 8px; }
+  .grid img { width: 100%; height: min(42vh, 360px); object-fit: contain; background: #808080; border-radius: 4px; display: block; }
+  .done { text-align: center; padding: 80px 16px; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <div class="progress"><span id="count">Loading…</span><div class="bar"><div id="fill"></div></div></div>
+    <div class="scale" id="scale"></div>
+    <button class="ghost" id="skip" title="Not one person, or cannot judge (S)">Skip</button>
+    <button class="ghost" id="back" title="Undo the last rating (Backspace)">Back</button>
+  </div>
+  <div class="hint">Rate the person's appearance 0–10. Keys: 0–9, T = 10, S = skip, Backspace = back. Scenery is removed; clothing should matter little.</div>
+</header>
+<main><div class="grid" id="grid"></div></main>
+<script>
+let items = [], pos = 0, history = [];
+const tags = new Set();
+function toggleTag(t) {
+  tags.has(t) ? tags.delete(t) : tags.add(t);
+  document.querySelectorAll('#tags button').forEach(b => b.classList.toggle('on', tags.has(b.dataset.tag)));
+}
+function clearTags() { tags.clear(); document.querySelectorAll('#tags button').forEach(b => b.classList.remove('on')); }
+document.querySelectorAll('#tags button').forEach(b => b.onclick = () => toggleTag(b.dataset.tag));
+const key = it => it.id + '#' + (it.pass || 1);
+const $ = id => document.getElementById(id);
+
+for (let v = 0; v <= 10; v++) {
+  const b = document.createElement('button');
+  b.textContent = v; b.onclick = () => rate(v); b.id = 'r' + v;
+  $('scale').appendChild(b);
+}
+$('skip').onclick = () => rate(null);
+$('back').onclick = back;
+
+async function post(body) {
+  const r = await fetch('/rate', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  if (!r.ok) throw new Error('save failed');
+}
+
+function show() {
+  const total = items.length;
+  $('count').textContent = pos >= total ? `All ${total} done` : `${pos + 1} of ${total}`;
+  $('fill').style.width = (100 * Math.min(pos, total) / total) + '%';
+  const g = $('grid'); g.innerHTML = '';
+  if (pos >= total) { g.outerHTML = '<div class="done">All done. Thank you.</div>'; return; }
+  const it = items[pos];
+  for (let k = 0; k < it.n; k++) {
+    const im = new Image(); im.loading = 'eager'; im.alt = ''; im.src = `thumbs/${it.id}/${k}.jpg`;
+    g.appendChild(im);
+  }
+  const nx = items[pos + 1];  // warm the next account's images
+  if (nx) for (let k = 0; k < nx.n; k++) { new Image().src = `thumbs/${nx.id}/${k}.jpg`; }
+  window.scrollTo(0, 0);
+}
+
+async function rate(v) {
+  if (pos >= items.length) return;
+  const it = items[pos];
+  const b = v === null ? $('skip') : $('r' + v);
+  b.classList.add('flash'); setTimeout(() => b.classList.remove('flash'), 150);
+  const body = v === null ? {id: it.id, pass: it.pass || 1, skip: true, pos} : {id: it.id, pass: it.pass || 1, rating: v, pos};
+  if (tags.size) body.tags = [...tags];
+  try {
+    await post(body);
+  } catch (e) { alert('Could not save. Is the rating server still running?'); return; }
+  clearTags(); history.push(pos); pos++; show();
+}
+
+async function back() {
+  if (!history.length) return;
+  const p = history.pop();
+  const it = items[p];
+  await post({id: it.id, pass: it.pass || 1, undo: true, pos: p});
+  clearTags(); pos = p; show();
+}
+
+document.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (/^[0-9]$/.test(e.key)) rate(+e.key);
+  else if (e.key === 't' || e.key === 'T') rate(10);
+  else if (e.key === 's' || e.key === 'S') rate(null);
+  else if (e.key === 'Backspace') { e.preventDefault(); back(); }
+});
+
+(async () => {
+  items = await (await fetch('items.json', {cache: 'no-store'})).json();
+  const done = new Set(await (await fetch('/done', {cache: 'no-store'})).json());
+  while (pos < items.length && done.has(key(items[pos]))) pos++;  // resume where you left off
+  show();
+})();
+</script>
+</body>
+</html>
