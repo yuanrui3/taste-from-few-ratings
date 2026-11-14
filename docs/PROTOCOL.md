@@ -1330,11 +1330,62 @@ on batch 2 and goes into the full model's face block only if, on batch 2, within
 0.05 or more over C0, all and men drop by no more than 0.02, and the full model's pool CV (photo-level,
 as afternoon A) stays within 0.005 of 0.669.
 
+Result (`results/face_codes_bench.json`): pool CV / batch 1 within Black / batch 2 within Black: C0 0.641 /
+0.061 / 0.339; C1 0.626 / 0.026 / 0.310; C2 0.638 / 0.026 / 0.379; C3 0.601 / 0.074 / 0.347; C4 0.642 / 0.055 /
+0.343; C5 0.646 / 0.096 / 0.348; C6 0.640 / 0.168 / 0.353; C7 0.621 / -0.009 / 0.411. Chosen on batch 1: C6
+(SigLIP + SFace); batch 2 test: within Black +0.014, all -0.001, men +0.021 -> **current codes stay**. (C7, all
+six codes, is best on batch 2 but was ineligible: pool CV 0.02 lower.)
+
 ## Owner-only face crops in the full model: confirmation (planned before running; `face_own_confirm.py`)
 Post-hoc observation (face crops section): owner-only crops gave the full model +0.007. Confirmed on fresh
 folds: full model CV with current vs owner-only face crops on 10 new fold seeds (100-109). Adopted for the
 full model only (the crowd and onboarding keep the current crops) if the mean gain is +0.005 or more and
 owner-only crops are better on 7 or more of the 10 seeds.
+Result (job 12374142, `results/face_own_confirm.json`): current 0.6839, owner-only 0.6934 (mean over seeds
+100-109, +0.0095), better on 10 of 10 seeds -> **adopted for the full model** (`taste_full.py` reads the
+owner-only face codes from `features_faceown.npz`; the crowd and onboarding keep the current crops).
+
+## What the latent space may miss (user, 2026-11-14: "Could our latent space miss something" / "Yes, run
+## them"; planned before running; `latent_gaps.py`)
+The rater agrees with their own repeats at 0.87, so a perfect model would reach about 0.93 against single
+ratings; the full model reaches 0.67 (CV). Five tests on the existing ratings, no new ratings. Base: the
+adopted full model (photo-level ridge on L-14 + SigLIP no-clothing and face codes plus SFace, strength
+10,000), grouped 5-fold CV on the training accounts, fold seeds 0-2 (as afternoon A).
+- **T1 Best photos.** Person score from the same photo predictions as the max, the mean of the top 3 and
+  the median, instead of the mean.
+- **T2 Style back in.** Add the with-clothing cut-out codes (L-14 + SigLIP `cut`), or the clothing-only
+  codes (L-14 `cloth`), to every photo row.
+- **T3 Several types.** (a) k-nearest-neighbour regression on person-level codes (cosine; k from 5, 10,
+  20, 40 by leave-one-out inside the training fold); (b) rank average of the full model and (a);
+  (c) per-cluster ridge (k-means, 3 clusters on PCA-32 of person codes, fitted on the training fold),
+  rank-averaged with the full model.
+  Rule for T1-T3: replaces the full model if CV reaches 0.689 (0.669 + 0.02).
+- **T4 Measurements on the residuals.** Per person (median over photos): face asymmetry, face proportions
+  (nose and mouth distance from the eye line, mouth width, all per eye distance) and head roll from the
+  five YuNet landmarks; shoulder-to-hip width and leg-to-torso length from the body keypoints where
+  visible; hair share of the person; face typicality (SFace distance to the pool mean). Skin colour is
+  not measured. Spearman of each with the full model's out-of-fold residuals (rank of rating minus rank
+  of prediction); a measurement is "missed by the latent space" if its Holm-adjusted p < 0.05. They join
+  the model only if a cross-fitted second stage (ridge on the full model's inner out-of-fold prediction
+  plus the measurements) raises CV by 0.02 or more.
+- **T5 Outside knowledge.** Out-of-fold Spearman within followed and within not-followed training
+  accounts, and the mean rank residual of each group, with bootstrap intervals. Diagnostic only: the
+  model stays vision-only.
+Results (job 12374141, `results/latent_gaps.json`; base CV 0.6695):
+- T1: max 0.643, top 3 0.660, median 0.664 -> **no**; the mean of all photos is best.
+- T2: with-clothing codes 0.665, clothing-only codes 0.671 (+0.001) -> **no**; style adds nothing the
+  no-clothing and face codes lack.
+- T3: kNN 0.515; full model + kNN 0.627; full model + per-cluster ridge 0.643 -> **no**; one direction
+  beats local and per-type models (k chosen 20-40).
+- T4: no measurement relates to the residuals after Holm correction (largest: shoulder / hip width
+  -0.133, face typicality +0.127, both Holm p about 0.2; face geometry |rho| <= 0.02); the second stage
+  lowers CV (0.646) -> **no**.
+- T5: within followed accounts 0.432 (n = 99), within not-followed 0.580 (n = 206); difference -0.147
+  [-0.364, +0.039]; followed people rated slightly higher than their photos predict (mean rank residual
+  +0.035 [-0.017, +0.087]). Suggestive of outside knowledge, not significant.
+Reading: the probes find nothing the latent space misses. The remaining gap to the rater's consistency is
+more likely data (the learning curve is still rising) and things no photo carries (T5 hints at outside
+knowledge), than a missing visual property.
 
 ## Changes
 
@@ -1362,3 +1413,5 @@ owner-only crops are better on 7 or more of the 10 seeds.
 - 2026-11-13, 13:20: correction to the reading of "Shared taste dimensions": on SCUT the gain
   came from anchoring on the crowd, not from other raters' directions (see the members
   simulation). The README's "Next step" section was rewritten accordingly.
+- 2026-11-14: the full model uses owner-only face crops (confirmed on 10 fresh fold seeds, +0.0095,
+  10/10); crowd and onboarding unchanged.

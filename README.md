@@ -20,13 +20,18 @@ machines; this repository holds only code, the protocol and aggregate results.
 | 10 | 0.46 |
 | 20 | 0.48 (live check: 0.46) |
 | 40 | 0.55 (live check: 0.54) |
-| ~300, full model, cross-validated | 0.67 (held-out accounts: 0.72) |
+| ~300, full model, cross-validated | 0.68 (held-out accounts, previous version: 0.72) |
 | Held-out test set, 99 people, scored once | 0.668 |
 | The rater against their own repeat ratings | 0.87 |
 
 The 0–40 rows are means over 20 random splits; the live checks are the rater re-rating the
 chosen people in the browser. Forty ratings (about four minutes) is the sweet spot: each rating
 up to 40 adds about the same, after that each adds a quarter as much.
+
+**Does the latent space miss something?** The rater agrees with their own repeats at 0.87, so about half of
+what is predictable is still missed. Five probes found no visual cause: best-photo aggregation, style, several
+"types", and face and body measurements on the errors all came out no better. People the rater follows are
+predicted worse (0.43 vs 0.58), a hint that outside knowledge enters the ratings (not significant).
 
 **Groups the rater rarely rated.** On 160 research portraits rated afterwards (predictions frozen
 before rating), the face model ranked men at about 0.41 and Black people at about 0.26, against

@@ -3,11 +3,14 @@
 
 Adopted 2026-11-13 (PROTOCOL.md, "Afternoon exploration", A): ridge regression trained on single
 photos, each photo described by OpenCLIP ViT-L-14 and SigLIP codes of the no-clothing cut-out and
-the face crop, plus the person's mean SFace face-recognition code; a person's score is the mean
-over their photos. Cross-validated Spearman 0.669 on the first rater's training accounts (0.636
-for the previous account-level model); labelled look at the held-out accounts 0.723.
+the face crop, plus the person's mean SFace face-recognition code. Since 2026-11-14 the face crop is
+cut from the owner-only cut-out, so neighbours in group photos are grey (+0.0095 on 10/10 fresh fold
+seeds; `features_faceown.npz` from `experiments/face_own.py crop` and `embed`); a person's score is the mean
+over their photos. Cross-validated Spearman 0.676 with owner-only face crops (0.669 with raw-photo crops,
+0.636 for the earlier account-level model) on the first rater's training accounts; labelled look at the
+held-out accounts 0.723 (raw-photo crops; the test set is not looked at again).
 
-Inputs (cluster folder): features.npz, features_more_vith_siglip.npz, cut/<person>/sface.npz,
+Inputs (cluster folder): features.npz, features_more_vith_siglip.npz, features_faceown.npz, cut/<person>/sface.npz,
 split/ratings_effective.json, split/rate_ids.json. Every person in features.npz is scored;
 rated people are scored by a model that did not see their own rating (5-fold), the others by
 the model trained on all ratings.
@@ -49,7 +52,14 @@ def main():
     users = np.array([str(u) for u in F["user"]])
     people = sorted(set(users))
     sf = {p: sface_mean(a.root, p) for p in people}
-    P = np.c_[F["clip_nocloth"], F["clip_face"], M["siglip_nocloth"], M["siglip_face"],
+    own = os.path.join(a.root, "features_faceown.npz")  # owner-only face crops (experiments/face_own.py crop + embed)
+    if os.path.exists(own):
+        O = np.load(own, allow_pickle=True); assert (O["user"] == F["user"]).all() and (O["code"] == F["code"]).all()
+        cf, gf = O["clip_face"], O["siglip_face"]
+    else:
+        print("note: no features_faceown.npz; using the raw-photo face crops (about 0.01 lower)")
+        cf, gf = F["clip_face"], M["siglip_face"]
+    P = np.c_[F["clip_nocloth"], cf, M["siglip_nocloth"], gf,
               np.stack([sf[u] for u in users])].astype(np.float64)
     rated = json.load(open(os.path.join(a.root, "split/ratings_effective.json")))["first"]
     ids = json.load(open(os.path.join(a.root, "split/rate_ids.json")))

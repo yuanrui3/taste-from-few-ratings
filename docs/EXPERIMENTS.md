@@ -53,11 +53,11 @@ One-off studies live in `taste/experiments/`. They import from the pipeline fold
 | `m_crowd_user.py` | Crowd M on the first rater | No: MEBeauty's crowd agrees with this rater at 0.13, so M lowers the zero-rating start (0.309 vs 0.386). A crowd helps the raters it was drawn from |
 | `photo_conditions.py` | Do resolution, face size, framing, group photos or scene brightness move the same person's score? | Barely: 1.5% of within-person variance; adjusting moves no one 10+ percentile points. No adjustment needed |
 | `owner_audit.py`, `owner_arcface.py`, `cutout_faces.py` | Are people mixed up under one account? SFace audit, a stronger face model (ArcFace R50), faces counted in the images the models see | Identity is fine (ArcFace changes no owner; most of its rejections are the same person). The mix-up is in face crops of group photos: 3.9% show a neighbour's face |
-| `face_own.py` | Face crops cut from the owner-only cut-out, so neighbours are grey | Full model +0.007 (0.676), but the crowd start drops (0.361 vs 0.386) and the few-rating curve with it (-0.028): current crops kept |
+| `face_own.py`, `face_own_confirm.py` | Face crops cut from the owner-only cut-out, so neighbours are grey | Few-rating side: no (the crowd start drops, 0.361 vs 0.386). **Full model: adopted** after confirmation on 10 fresh fold seeds (+0.0095, 10/10) |
 | `mebeauty_batch.py`, `mebatch_learn.py` | 60 research portraits (MEBeauty: Black women and men, men of five other groups) rated by the first rater, predictions frozen before rating | Clean test: 0.30 overall, 0.06 within Black faces (30 faces; repeats agree 0.69), 0.32 within men (pool level 0.64); no crowd does better. The leave-one-out gain from these ratings did not hold on new faces (batch 2) |
 | `mebatch2.py`, `mebatch_weights.py` | 100 more portraits (70 Black women and men), predictions frozen before rating; portrait ratings added at weights 0.5-5, tested across batches | Clean test: 0.40 overall, 0.34 within Black faces, 0.48 within men (repeats agree 0.90). Adding batch 1 makes it worse (0.25); no weight helps within Black faces in both directions: portrait ratings are not used |
-| `face_codes_bench.py` | Which face codes rank the rarely rated groups best, chosen on portrait batch 1 and tested once on batch 2? | See the protocol |
-| `face_own_confirm.py` | Owner-only face crops in the full model, on 10 fresh fold seeds | See the protocol |
+| `face_codes_bench.py` | Which face codes rank the rarely rated groups best (CLIP, SigLIP, SFace, ViT-H, DINOv2, ArcFace), chosen on portrait batch 1, tested once on batch 2? | No change: the chosen codes (SigLIP + SFace) gain +0.014 within Black faces on batch 2, under the +0.05 rule |
+| `latent_gaps.py` | Does the latent space miss something? Best-photo aggregation, style back in, several "types", measurements on the residuals, followed vs not followed | Nothing found: mean of photos, no clothing, one direction all stay best; no face or body measurement explains the errors. Followed people are predicted worse (0.43 vs 0.58), a hint of outside knowledge, not significant |
 
 ## Open question: more raters
 
@@ -68,3 +68,4 @@ crowd alone predicts them at 0.72, and every member-based model only matched tha
 real raters who, like the first one, differ from the crowd: several members rate the onboarding
 page's 40 people (the page's "Save my ratings" button writes a small file with opaque ids and
 numbers only), and each member is then left out in turn as the "new rater".
+
