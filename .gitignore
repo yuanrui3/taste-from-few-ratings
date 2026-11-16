@@ -15,3 +15,4 @@ arc/
 ratings*.json
 __pycache__/
 .DS_Store
+pairs_site/

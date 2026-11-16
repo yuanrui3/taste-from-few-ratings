@@ -33,6 +33,10 @@ what is predictable is still missed. Five probes found no visual cause: best-pho
 "types", and face and body measurements on the errors all came out no better. People the rater follows are
 predicted worse (0.43 vs 0.58), a hint that outside knowledge enters the ratings (not significant).
 
+**Which photo of a person?** Trained only on ratings of whole people, the model can still tell a person's
+photos apart. In a frozen-prediction test the rater picked the model's best over its worst photo of the same
+person in 21 of 27 pairs (78%); across all pairs, including near-ties, 62% (not significant by the rule).
+
 **Groups the rater rarely rated.** On 160 research portraits rated afterwards (predictions frozen
 before rating), the face model ranked men at about 0.41 and Black people at about 0.26, against
 0.64 on the rater's own photo pool. Public crowd models did not close that gap, and nor did

@@ -1387,6 +1387,57 @@ Reading: the probes find nothing the latent space misses. The remaining gap to t
 more likely data (the learning curve is still rising) and things no photo carries (T5 hints at outside
 knowledge), than a missing visual property.
 
+## Within-person photo variation (user, 2026-11-15: can the model tell which image of a person the rater
+## likes? "Yes, run it"; planned before running; `within_person.py`; no new ratings, training accounts only)
+Psychology finds that photos of one person vary in judged attractiveness as much as, or more than, different
+people do (Jenkins et al. 2011; Todorov & Porter 2014): an intraclass correlation (ICC: share of photo-score
+variance that lies between people) of 0.5 or lower for human judges. Measured here for the models'
+photo scores (out-of-fold, grouped 5-fold, seeds 0-2, 305 training accounts, 2,6xx photos):
+- ICC(1) of the adopted full model's photo scores (owner-only face crops), and of the crowd's per-photo
+  face score (SCUT ridges on each photo's CLIP face code and SFace code).
+- Reliability of the within-person ordering: mean over people (3+ photos) of the Spearman between two
+  fits' photo scores within the person: seed 0 vs seed 1 of the full model; a CLIP-only vs a SigLIP-only
+  photo model (seed 0).
+- What moves a person's photo scores: share of within-person variance explained by framing (face or
+  close-up / head and shoulders / to the hips / to the knees / full body).
+Reading, fixed now: a model ICC well above 0.5 (0.8 or more) means the model treats a person's photos as
+near-identical and cannot express the within-person differences people see; image-level liking then needs
+image-level labels. A within-person ordering reliability of 0.5 or more across model families means there
+is a consistent photo-level signal worth testing against image-level labels later.
+Result (job 12393382, `results/within_person.json`; 2,636 photos of 305 people): ICC(1) full model 0.725,
+crowd per photo 0.416. Typical spread of one person's photo scores 0.345 rating points against 0.614 between
+people's means. Within-person ordering: full model seed 0 vs seed 1 0.847; CLIP-only vs SigLIP-only 0.544
+(305 people). Framing explains 1.9% of the within-person variance (photo conditions 1.5%, earlier).
+Reading: 0.725 < 0.8, so the model does tell one person's photos apart (about a third of its score
+variance lies within people), less than a generic crowd score or human judges do; and two different image
+models agree on the order of a person's photos at 0.54 >= 0.5, so there is a consistent photo-level signal,
+not explained by framing or photo conditions. Whether that order matches which photos the rater likes is
+untested: it needs image-level labels.
+
+## Photo pairs: does the model pick the photo the rater prefers? (user, 2026-11-15; planned before picking;
+## `photo_pairs.py`)
+60 people drawn at random (seed 20261115) from the training accounts with 4+ kept photos; one pair of that
+person's photos each. Pairs 1-40: the full model's highest- vs lowest-scoring photo of the person; pairs
+41-60: two photos drawn at random. Photo scores: the adopted full model (owner-only face crops), out-of-fold
+(the person's own rating never used), mean over fold seeds 0-2; the crowd's per-photo face score is frozen
+too. Shown as on the rating page (the person cut out on grey), left / right at random, in random order, plus
+6 unannounced repeats with sides swapped. The rater picks the photo they like more (or skips). Predictions
+frozen before the page opens (SHA-256 recorded here). Reported once: share of pairs where the rater picks
+the model's photo, overall and for each pair type, with a one-sided binomial test against 50%; the same for
+the crowd's pick; consistency on the repeats. Reading, fixed now: the model's photo-level signal predicts the
+rater's image-level preference if overall agreement is above 50% with p < 0.05.
+Record: pairs picked and predictions frozen 2026-11-15 before the page opened (job 12393457):
+`results/photo_pairs_pred.json` SHA-256 `dfae5209e091dcd0394d3efb06d9694df9fde527c64b67af85191295222fae4c`.
+Result (`results/photo_pairs_eval.json`; 40 of 60 pairs answered, 20 skipped as "can't choose"; the 2
+answered repeats matched): the model's photo was picked in 25 of 40 pairs (62%, one-sided p = 0.077) ->
+**not shown** by the rule (overall p < 0.05). By pair type: the model's best vs worst photo of a person 21 of
+27 (78%, p = 0.003); random pairs 4 of 13 (31%). The crowd's per-photo pick: 23 of 40 (58%, p = 0.21); 16 of
+27 and 7 of 13. Among best-vs-worst pairs, a larger model gap went with more agreement (Spearman 0.49).
+Reading: when the model separates a person's photos clearly, the rater mostly agrees (78%), and the taste
+model does better than a generic attractiveness model there (59%); between photos it scores alike it says
+nothing useful. A third of the pairs were skipped, which cut the test's power; a confirmation would need
+more pairs of the best-vs-worst kind.
+
 ## Changes
 
 - 2026-11-12, before any photo was downloaded or rated: pool size set to about 400 accounts
