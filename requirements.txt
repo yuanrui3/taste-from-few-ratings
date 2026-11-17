@@ -17,3 +17,5 @@ opencv-contrib-python==5.0.0.93
 # Optional: ArcFace experiments, MEBeauty v2.1 parquet files
 onnxruntime-gpu==1.19.2
 pyarrow==17.0.0
+# Optional: the addendum's exposure scorer (install with --no-deps next to onnxruntime-gpu)
+nudenet==3.4.2

@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Photo ratings</title>
+<style>
+  :root { --bg: #f4f4f2; --fg: #1d1d1b; --muted: #6b6b66; --line: #d9d9d4; --accent: #2c5d8f; --card: #fff; --warn: #b3412f; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #161615; --fg: #ecece8; --muted: #9a9a94; --line: #34342f; --accent: #7fb0e0; --card: #20201e; --warn: #e07a66; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.4 -apple-system, system-ui, sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line); padding: 10px 16px; }
+  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .progress { flex: 1; min-width: 160px; }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+  .bar > div { height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--fg); border-radius: 6px; padding: 8px 0; min-width: 40px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.on { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+  .ghost { padding: 8px 12px; color: var(--muted); }
+  .ghost.warn:hover { border-color: var(--warn); color: var(--warn); }
+  .hint { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 520px); gap: 20px; padding: 14px 16px 40px; align-items: start; }
+  @media (max-width: 820px) { main { grid-template-columns: 1fr; } }
+  .photo { background: #808080; border-radius: 6px; display: flex; justify-content: center; }
+  .photo img { max-width: 100%; max-height: calc(100vh - 150px); object-fit: contain; display: block; border-radius: 6px; }
+  .q { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+  .q.active { border-color: var(--accent); }
+  .q h2 { font-size: 15px; margin: 0 0 2px; }
+  .q p { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  .scale { display: grid; grid-template-columns: repeat(11, 1fr); gap: 4px; }
+  .scale button { min-width: 0; }
+  .ends { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .done { text-align: center; padding: 80px 16px; color: var(--muted); grid-column: 1 / -1; }
+</style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <div class="progress"><span id="count">Loading…</span><div class="bar"><div id="fill"></div></div></div>
+    <button class="ghost" id="skip" title="Not clear who is meant, or cannot judge (S)">Skip</button>
+    <button class="ghost warn" id="minor" title="Removes this person from the study (U)">May be under 18</button>
+    <button class="ghost" id="back" title="Clear this photo's answer, or go back one photo (Backspace)">Back</button>
+  </div>
+  <div class="hint">Two answers per photo, 0–10 each; the page moves on after the second. Keys: 0–9 and T = 10 fill the highlighted question, Backspace = back, S = skip, U = may be under 18.</div>
+</header>
+<main id="main">
+  <div class="photo"><img id="photo" alt=""></div>
+  <div>
+    <div class="q" id="q0">
+      <h2>Sexual implication</h2>
+      <p>How much does this photo have sexual implications to you?</p>
+      <div class="scale" id="s0"></div>
+      <div class="ends"><span>0 none</span><span>10 very strong</span></div>
+    </div>
+    <div class="q" id="q1">
+      <h2>Sexual attractiveness</h2>
+      <p>How sexually attractive is this person to you in this photo?</p>
+      <div class="scale" id="s1"></div>
+      <div class="ends"><span>0 not at all</span><span>10 extremely</span></div>
+    </div>
+  </div>
+</main>
+<script>
+const FIELDS = ['implication', 'attractive'];
+let items = [], pos = 0, history = [], ans = [null, null], busy = false;
+const gone = new Set();  // people answered "may be under 18"
+const key = it => it.id + '#' + (it.pass || 1);
+const $ = id => document.getElementById(id);
+
+for (let q = 0; q < 2; q++) for (let v = 0; v <= 10; v++) {
+  const b = document.createElement('button');
+  b.textContent = v; b.id = `b${q}_${v}`; b.onclick = () => choose(q, v);
+  $('s' + q).appendChild(b);
+}
+$('skip').onclick = () => skip('unclear');
+$('minor').onclick = () => skip('under18');
+$('back').onclick = back;
+
+async function post(body) {
+  const r = await fetch('/rate', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  if (!r.ok) throw new Error('save failed');
+}
+
+function paint() {
+  for (let q = 0; q < 2; q++) {
+    for (let v = 0; v <= 10; v++) $(`b${q}_${v}`).classList.toggle('on', ans[q] === v);
+    $('q' + q).classList.toggle('active', q === next());
+  }
+}
+const next = () => ans[0] === null ? 0 : (ans[1] === null ? 1 : -1);
+
+async function show() {
+  // photos of a person answered "may be under 18" are passed over without being shown
+  while (pos < items.length && gone.has(items[pos].g)) {
+    const it = items[pos];
+    try { await post({id: it.id, pass: it.pass || 1, skip: true, reason: 'under18', auto: true, pos}); } catch (e) {}
+    pos++;
+  }
+  const total = items.length;
+  $('count').textContent = pos >= total ? `All ${total} done` : `${pos + 1} of ${total}`;
+  $('fill').style.width = (100 * Math.min(pos, total) / total) + '%';
+  if (pos >= total) { $('main').innerHTML = '<div class="done">All done. Thank you.</div>'; return; }
+  ans = [null, null]; paint();
+  $('photo').src = `img/${items[pos].id}.jpg`;
+  const nx = items[pos + 1];
+  if (nx) new Image().src = `img/${nx.id}.jpg`;  // warm the next photo
+  window.scrollTo(0, 0);
+}
+
+async function choose(q, v) {
+  if (busy || pos >= items.length) return;
+  ans[q] = v; paint();
+  if (next() !== -1) return;
+  busy = true;
+  const it = items[pos];
+  try {
+    await post({id: it.id, pass: it.pass || 1, implication: ans[0], attractive: ans[1], pos});
+    await new Promise(r => setTimeout(r, 140));
+    history.push(pos); pos++; await show();
+  } catch (e) { alert('Could not save. Is the rating server still running?'); ans[q] = null; paint(); }
+  busy = false;
+}
+
+async function skip(reason) {
+  if (busy || pos >= items.length) return;
+  busy = true;
+  const it = items[pos];
+  try {
+    await post({id: it.id, pass: it.pass || 1, skip: true, reason, pos});
+    if (reason === 'under18') gone.add(it.g);
+    history.push(pos); pos++; await show();
+  } catch (e) { alert('Could not save. Is the rating server still running?'); }
+  busy = false;
+}
+
+async function back() {
+  if (busy) return;
+  if (ans[0] !== null || ans[1] !== null) { ans = [null, null]; paint(); return; }
+  if (!history.length) return;
+  busy = true;
+  const p = history.pop(), it = items[p];
+  try {
+    await post({id: it.id, pass: it.pass || 1, undo: true, pos: p});
+    gone.delete(it.g);
+    pos = p; await show();
+  } catch (e) { history.push(p); alert('Could not save. Is the rating server still running?'); }
+  busy = false;
+}
+
+document.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const q = next();
+  if (/^[0-9]$/.test(e.key)) { if (q !== -1) choose(q, +e.key); }
+  else if (e.key === 't' || e.key === 'T') { if (q !== -1) choose(q, 10); }
+  else if (e.key === 's' || e.key === 'S') skip('unclear');
+  else if (e.key === 'u' || e.key === 'U') skip('under18');
+  else if (e.key === 'Backspace') { e.preventDefault(); back(); }
+});
+
+(async () => {
+  items = await (await fetch('items.json', {cache: 'no-store'})).json();
+  const done = new Set(await (await fetch('/done', {cache: 'no-store'})).json());
+  const flagged = new Set(await (await fetch('/flagged', {cache: 'no-store'})).json());
+  for (const it of items) if (flagged.has(it.id)) gone.add(it.g);
+  while (pos < items.length && done.has(key(items[pos]))) pos++;  // resume where you left off
+  show();
+})();
+</script>
+</body>
+</html>

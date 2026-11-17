@@ -10,7 +10,7 @@ machines; this repository holds only code, the protocol and aggregate results.
 
 ![Poster](poster/poster.png)
 
-[Poster (PDF)](poster/poster.pdf) · [Protocol: every rule and result](docs/PROTOCOL.md) · [All experiments](docs/EXPERIMENTS.md)
+[Poster (PDF)](poster/poster.pdf) · [Protocol: every rule and result](docs/PROTOCOL.md) · [All experiments](docs/EXPERIMENTS.md) · [Addendum: sexual implication and attractiveness, per photo](docs/ADDENDUM-sexual-attractiveness.md)
 
 ## Results (one rater, 407 rated people)
 
@@ -128,6 +128,7 @@ taste/experiments/    one-off studies; each has a section in docs/PROTOCOL.md
 idscore/              face detection / recognition and clothes-parsing helpers used by the pipeline
 docs/PROTOCOL.md      lab notebook: rules written before each test, then the result
 docs/EXPERIMENTS.md   every experiment, its question and its outcome
+docs/ADDENDUM-*.md    addendum: per-photo sexual implication and sexual attractiveness
 poster/               the poster (PDF, PNG and HTML source)
 ```
 
