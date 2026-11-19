@@ -53,7 +53,8 @@ One account is one person and gets one rating.
 - A local page shows about 12 cut-outs of the owner on gray, without the handle. The user gives a
   whole number 0-10, or "skip" (not one person / cannot judge). Accounts come in random order.
 - About 10% of accounts come back later in the session, unannounced, to measure how consistent the
-  user's own ratings are. That consistency is the ceiling any model can reach.
+  user's own ratings are. That consistency is the ceiling any model can reach. (Corrected
+  2026-11-18: the ceiling is its square root, about 0.93 for 0.869; see Changes.)
 
 ## Split (frozen before rating)
 
@@ -180,7 +181,8 @@ outfit-invariant projection matched the winner (0.59) with 128 dims.
 Test (pass rule): Spearman 0.668 [0.530, 0.773] -> (1) pass; crowd aesthetic score -0.054,
 difference [0.511, 0.917] -> (2) pass; scene-only control 0.336, difference [0.126, 0.537];
 clothing-only control 0.265, difference [0.235, 0.571] -> (3) pass. **PASS.**
-Also: 77% of the user's own consistency; correct order for 85% of pairs rated 2+ apart; mean
+Also: 77% of the user's own consistency (corrected 2026-11-18: 72% of the ceiling that
+consistency allows, 0.668 / sqrt(0.869) = 0.717; see Changes); correct order for 85% of pairs rated 2+ apart; mean
 absolute error 0.89; of the top 10% predicted, 33% were rated 8+ (base rate 16%); women 0.70
 (n=91), men 0.61 (n=8, too few to read).
 
@@ -1466,3 +1468,11 @@ more pairs of the best-vs-worst kind.
   simulation). The README's "Next step" section was rewritten accordingly.
 - 2026-11-14: the full model uses owner-only face crops (confirmed on 10 fresh fold seeds, +0.0095,
   10/10); crowd and onboarding unchanged.
+- 2026-11-18, correction (no rule, test or result changed): the ceiling on the correlation any
+  model can reach with one rating is the square root of the rater's test-retest reliability,
+  not the reliability itself (correction for attenuation). With the repeats' 0.869 the ceiling
+  is sqrt(0.869) = 0.932, so the main test's 0.668 is 72% of it (0.668 / 0.932 = 0.717), not the
+  77% recorded (0.668 / 0.869). The plan's sentence "That consistency is the ceiling" and the
+  poster's "0.87 ... (ceiling)" label are corrected the same way. The 0.869 itself comes from
+  repeats within one session; repeats in a later session may agree less, which would lower the
+  ceiling.
