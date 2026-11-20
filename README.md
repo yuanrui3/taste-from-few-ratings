@@ -22,20 +22,29 @@ machines; this repository holds only code, the protocol and aggregate results.
 | 40 | 0.55 (live check: 0.54) |
 | ~300, full model, cross-validated | 0.68 (held-out accounts, previous version: 0.72) |
 | Held-out test set, 99 people, scored once | 0.668 |
-| The rater against their own repeat ratings | 0.87 |
+| The rater against their own repeat ratings, same session | 0.87 |
+| The rater against their own ratings a week later | 0.69 (all 40 within 1 point) |
 
 The 0–40 rows are means over 20 random splits; the live checks are the rater re-rating the
 chosen people in the browser. Forty ratings (about four minutes) is the sweet spot: each rating
 up to 40 adds about the same, after that each adds a quarter as much.
 
 **Does the latent space miss something?** The rater agrees with their own repeats at 0.87, so about half of
-what is predictable is still missed. Five probes found no visual cause: best-photo aggregation, style, several
+what is predictable is still missed (within one session; a week apart the rater agrees with themself at 0.69,
+and the model reaches 80% of that lower ceiling). Five probes found no visual cause: best-photo aggregation, style, several
 "types", and face and body measurements on the errors all came out no better. People the rater follows are
 predicted worse (0.43 vs 0.58), a hint that outside knowledge enters the ratings (not significant).
 
 **Which photo of a person?** Trained only on ratings of whole people, the model can still tell a person's
 photos apart. In a frozen-prediction test the rater picked the model's best over its worst photo of the same
 person in 21 of 27 pairs (78%); across all pairs, including near-ties, 62% (not significant by the rule).
+In a second test on 80 new people, 4 photos each, the rater picked the photo they liked most and least; the
+model scored the most-liked above the least-liked for 51 (64%, p = 0.009, passes its rule). When 8 sets came
+back, the rater repeated their most-liked pick 5 times and least-liked 6 times, so the ceiling is well below 100%.
+
+**Newer models, a better loss, other people's scorers.** Three checks from a review of the bottlenecks, with no
+new ratings: codes from Perception Encoder, SigLIP 2 and Sapiens; training on per-person averages; and personal
+weights over a bank of crowd scorers. None improved the full model or the few-rating curve.
 
 **Groups the rater rarely rated.** On 160 research portraits rated afterwards (predictions frozen
 before rating), the face model ranked men at about 0.41 and Black people at about 0.26, against

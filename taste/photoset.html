@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Appearance ratings</title>
+<style>
+  :root { --bg: #f4f4f2; --fg: #1d1d1b; --muted: #6b6b66; --line: #d9d9d4; --accent: #2c5d8f; --card: #fff; --warn: #b3412f; --good: #2f7d4f; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #161615; --fg: #ecece8; --muted: #9a9a94; --line: #34342f; --accent: #7fb0e0; --card: #20201e; --warn: #e07a66; --good: #6cc08f; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.4 -apple-system, system-ui, sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line); padding: 10px 16px; }
+  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .progress { flex: 1; min-width: 160px; }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+  .bar > div { height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--fg); border-radius: 6px; padding: 8px 0; min-width: 40px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.on { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+  .ghost { padding: 8px 12px; color: var(--muted); }
+  .ghost.warn:hover { border-color: var(--warn); color: var(--warn); }
+  .hint { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  .steps { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; align-items: center; }
+  .step { border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 13px; color: var(--muted); }
+  .step.active { border-color: var(--accent); color: var(--fg); font-weight: 600; }
+  .step.fin { color: var(--good); border-color: var(--good); }
+  .scale { display: flex; gap: 4px; flex-wrap: wrap; }
+  .scale.off { opacity: .45; }
+  main { padding: 12px 16px 40px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(230px, 45vw), 1fr)); gap: 8px; }
+  .grid img { width: 100%; height: min(42vh, 360px); object-fit: contain; background: #808080; border-radius: 4px; display: block; }
+  .set { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  @media (max-width: 760px) { .set { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .tile { position: relative; border: 3px solid transparent; border-radius: 8px; cursor: pointer; background: #808080; }
+  .tile img { width: 100%; height: min(64vh, 560px); object-fit: contain; display: block; border-radius: 5px; }
+  .tile .n { position: absolute; top: 6px; left: 6px; background: rgba(0,0,0,.6); color: #fff; border-radius: 6px; padding: 1px 8px; font-weight: 600; }
+  .tile .tag { position: absolute; bottom: 6px; left: 6px; right: 6px; text-align: center; border-radius: 6px; padding: 2px 6px; font-weight: 600; color: #fff; display: none; }
+  .tile.best { border-color: var(--good); } .tile.best .tag { display: block; background: var(--good); }
+  .tile.worst { border-color: var(--warn); } .tile.worst .tag { display: block; background: var(--warn); }
+  .tile.pickable:hover { border-color: var(--accent); }
+  .done { text-align: center; padding: 80px 16px; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <div class="progress"><span id="count">Loading…</span><div class="bar"><div id="fill"></div></div></div>
+    <div class="scale" id="scale"></div>
+    <button class="ghost" id="skip" title="Not one person, or cannot judge (S)">Skip</button>
+    <button class="ghost warn" id="minor" title="Removes this person from the study (U)">May be under 18</button>
+    <button class="ghost" id="back" title="Undo the last answer (Backspace)">Back</button>
+  </div>
+  <div class="hint" id="hint"></div>
+  <div class="steps" id="steps"></div>
+</header>
+<main id="main"></main>
+<script>
+// Two kinds of screen. "rate": up to 12 cut-outs of one person, rate them 0-10 (as on the first rating page).
+// "set": 4 photos of one person; rate the person 0-10, then pick the photo you like most, then the one you like least.
+let items = [], pos = 0, history = [], busy = false, st = null;
+const gone = new Set();  // people answered "may be under 18"
+const key = it => it.id + '#' + (it.pass || 1);
+const $ = id => document.getElementById(id);
+
+for (let v = 0; v <= 10; v++) {
+  const b = document.createElement('button');
+  b.textContent = v; b.id = 'r' + v; b.onclick = () => rate(v);
+  $('scale').appendChild(b);
+}
+$('skip').onclick = () => skip('unclear');
+$('minor').onclick = () => skip('under18');
+$('back').onclick = back;
+
+async function post(body) {
+  const r = await fetch('/rate', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  if (!r.ok) throw new Error('save failed');
+}
+
+function stage() {  // 0 = rating, 1 = most liked, 2 = least liked
+  if (st.rating === null) return 0;
+  if (st.kind === 'set' && st.best === null) return 1;
+  if (st.kind === 'set' && st.worst === null) return 2;
+  return 3;
+}
+
+function paint() {
+  const s = stage();
+  for (let v = 0; v <= 10; v++) $('r' + v).classList.toggle('on', st.rating === v);
+  $('scale').classList.toggle('off', s !== 0);
+  if (st.kind === 'set') {
+    const names = ['Rate the person 0–10', 'Photo you like most', 'Photo you like least'];
+    $('steps').innerHTML = names.map((t, i) => `<span class="step ${i === s ? 'active' : (i < s ? 'fin' : '')}">${i + 1}. ${t}</span>`).join('');
+    $('hint').textContent = s === 0 ? 'Rate the person\'s appearance 0–10 from these four photos. Keys: 0–9, T = 10.'
+      : (s === 1 ? 'Which of the four photos of this person do you like most? Click it or press 1–4.'
+                 : 'Which photo do you like least? Click it or press 1–4.');
+    document.querySelectorAll('.tile').forEach(t => {
+      const k = +t.dataset.k;
+      t.classList.toggle('best', st.best === k); t.classList.toggle('worst', st.worst === k);
+      t.classList.toggle('pickable', (s === 1) || (s === 2 && st.best !== k));
+      t.querySelector('.tag').textContent = st.best === k ? 'Most liked' : (st.worst === k ? 'Least liked' : '');
+    });
+  } else {
+    $('steps').innerHTML = '';
+    $('hint').textContent = 'Rate the person\'s appearance 0–10. Keys: 0–9, T = 10, S = skip, U = may be under 18, Backspace = back. Scenery is removed; clothing should matter little.';
+  }
+}
+
+async function show() {
+  while (pos < items.length && gone.has(items[pos].g)) {  // a person answered "may be under 18" is passed over
+    const it = items[pos];
+    try { await post({id: it.id, pass: it.pass || 1, skip: true, reason: 'under18', auto: true, pos}); } catch (e) {}
+    pos++;
+  }
+  const total = items.length;
+  $('count').textContent = pos >= total ? `All ${total} done` : `${pos + 1} of ${total}`;
+  $('fill').style.width = (100 * Math.min(pos, total) / total) + '%';
+  if (pos >= total) { $('main').innerHTML = '<div class="done">All done. Thank you.</div>'; $('steps').innerHTML = ''; $('hint').textContent = ''; return; }
+  const it = items[pos];
+  st = {kind: it.kind, rating: null, best: null, worst: null};
+  const main = $('main'); main.innerHTML = '';
+  if (it.kind === 'set') {
+    const box = document.createElement('div'); box.className = 'set';
+    it.order.forEach((k, slot) => {
+      const t = document.createElement('div'); t.className = 'tile'; t.dataset.k = k; t.dataset.slot = slot;
+      t.innerHTML = `<img alt="" src="thumbs/${it.id}/${k}.jpg"><span class="n">${slot + 1}</span><span class="tag"></span>`;
+      t.onclick = () => pick(slot);
+      box.appendChild(t);
+    });
+    main.appendChild(box);
+  } else {
+    const g = document.createElement('div'); g.className = 'grid';
+    for (let k = 0; k < it.n; k++) { const im = new Image(); im.alt = ''; im.src = `thumbs/${it.id}/${k}.jpg`; g.appendChild(im); }
+    main.appendChild(g);
+  }
+  const nx = items[pos + 1];
+  if (nx) (nx.kind === 'set' ? nx.order : [...Array(nx.n).keys()]).forEach(k => { new Image().src = `thumbs/${nx.id}/${k}.jpg`; });
+  paint(); window.scrollTo(0, 0);
+}
+
+async function save() {
+  busy = true;
+  const it = items[pos];
+  const body = {id: it.id, pass: it.pass || 1, kind: it.kind, rating: st.rating, pos};
+  if (it.kind === 'set') { body.best = st.best; body.worst = st.worst; }
+  try {
+    await post(body);
+    await new Promise(r => setTimeout(r, 160));
+    history.push(pos); pos++; await show();
+  } catch (e) {
+    alert('Could not save. Is the rating server still running?');
+    if (it.kind === 'set') st.worst = null; else st.rating = null;
+    paint();
+  }
+  busy = false;
+}
+
+function rate(v) {
+  if (busy || pos >= items.length || stage() !== 0) return;
+  st.rating = v; paint();
+  if (stage() === 3) save();
+}
+
+function pick(slot) {
+  if (busy || pos >= items.length || st.kind !== 'set') return;
+  const k = items[pos].order[slot], s = stage();
+  if (s === 1) { st.best = k; paint(); }
+  else if (s === 2 && k !== st.best) { st.worst = k; paint(); save(); }
+}
+
+async function skip(reason) {
+  if (busy || pos >= items.length) return;
+  busy = true;
+  const it = items[pos];
+  try {
+    await post({id: it.id, pass: it.pass || 1, kind: it.kind, skip: true, reason, pos});
+    if (reason === 'under18') gone.add(it.g);
+    history.push(pos); pos++; await show();
+  } catch (e) { alert('Could not save. Is the rating server still running?'); }
+  busy = false;
+}
+
+async function back() {
+  if (busy) return;
+  const s = stage();
+  if (s === 2) { st.best = null; paint(); return; }
+  if (s === 1) { st.rating = null; paint(); return; }
+  if (!history.length) return;
+  busy = true;
+  const p = history.pop(), it = items[p];
+  try {
+    await post({id: it.id, pass: it.pass || 1, undo: true, pos: p});
+    gone.delete(it.g);
+    pos = p; await show();
+  } catch (e) { history.push(p); alert('Could not save. Is the rating server still running?'); }
+  busy = false;
+}
+
+document.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || !st) return;
+  const s = stage();
+  if (/^[0-9]$/.test(e.key)) {
+    if (s === 0) rate(+e.key);
+    else if ((s === 1 || s === 2) && +e.key >= 1 && +e.key <= 4) pick(+e.key - 1);
+  }
+  else if ((e.key === 't' || e.key === 'T') && s === 0) rate(10);
+  else if (e.key === 's' || e.key === 'S') skip('unclear');
+  else if (e.key === 'u' || e.key === 'U') skip('under18');
+  else if (e.key === 'Backspace') { e.preventDefault(); back(); }
+});
+
+(async () => {
+  items = await (await fetch('items.json', {cache: 'no-store'})).json();
+  const done = new Set(await (await fetch('/done', {cache: 'no-store'})).json());
+  const flagged = new Set(await (await fetch('/flagged', {cache: 'no-store'})).json());
+  for (const it of items) if (flagged.has(it.id)) gone.add(it.g);
+  while (pos < items.length && done.has(key(items[pos]))) pos++;  // resume where you left off
+  show();
+})();
+</script>
+</body>
+</html>

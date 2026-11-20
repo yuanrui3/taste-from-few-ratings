@@ -54,7 +54,9 @@ One account is one person and gets one rating.
   whole number 0-10, or "skip" (not one person / cannot judge). Accounts come in random order.
 - About 10% of accounts come back later in the session, unannounced, to measure how consistent the
   user's own ratings are. That consistency is the ceiling any model can reach. (Corrected
-  2026-11-18: the ceiling is its square root, about 0.93 for 0.869; see Changes.)
+  2026-11-18: the ceiling is its square root, about 0.93 for 0.869; see Changes. Note
+  2026-11-19: across sessions a week apart the consistency is 0.694 and the ceiling about 0.83;
+  see "Photo sets and later-session repeats", Result.)
 
 ## Split (frozen before rating)
 
@@ -182,7 +184,9 @@ Test (pass rule): Spearman 0.668 [0.530, 0.773] -> (1) pass; crowd aesthetic sco
 difference [0.511, 0.917] -> (2) pass; scene-only control 0.336, difference [0.126, 0.537];
 clothing-only control 0.265, difference [0.235, 0.571] -> (3) pass. **PASS.**
 Also: 77% of the user's own consistency (corrected 2026-11-18: 72% of the ceiling that
-consistency allows, 0.668 / sqrt(0.869) = 0.717; see Changes); correct order for 85% of pairs rated 2+ apart; mean
+consistency allows, 0.668 / sqrt(0.869) = 0.717; see Changes; note 2026-11-19: that ceiling comes
+from repeats within one session; across sessions a week apart it is about 0.83 and 0.668 is 80% of it,
+see "Photo sets and later-session repeats", Result); correct order for 85% of pairs rated 2+ apart; mean
 absolute error 0.89; of the top 10% predicted, 33% were rated 8+ (base rate 16%); women 0.70
 (n=91), men 0.61 (n=8, too few to read).
 
@@ -1350,7 +1354,8 @@ owner-only face codes from `features_faceown.npz`; the crowd and onboarding keep
 ## What the latent space may miss (user, 2026-11-14: "Could our latent space miss something" / "Yes, run
 ## them"; planned before running; `latent_gaps.py`)
 The rater agrees with their own repeats at 0.87, so a perfect model would reach about 0.93 against single
-ratings; the full model reaches 0.67 (CV). Five tests on the existing ratings, no new ratings. Base: the
+ratings; the full model reaches 0.67 (CV). (Note 2026-11-19: 0.87 is within one session; a week apart the
+rater agrees with themself at 0.69, a ceiling of about 0.83; see "Photo sets and later-session repeats".) Five tests on the existing ratings, no new ratings. Base: the
 adopted full model (photo-level ridge on L-14 + SigLIP no-clothing and face codes plus SFace, strength
 10,000), grouped 5-fold CV on the training accounts, fold seeds 0-2 (as afternoon A).
 - **T1 Best photos.** Person score from the same photo predictions as the max, the mean of the top 3 and
@@ -1440,6 +1445,179 @@ model does better than a generic attractiveness model there (59%); between photo
 nothing useful. A third of the pairs were skipped, which cut the test's power; a confirmation would need
 more pairs of the best-vs-worst kind.
 
+## Three checks from the bottleneck review, no new ratings (planned 2026-11-18, 23:20, before running)
+
+The user, 2026-11-18: "Yes, run them", the three checks that a review of the project's bottlenecks (not
+published) found need no new ratings. Training accounts only (305
+people; folds keep accounts of one person together, seeds 0-2); the held-out test accounts are not used.
+
+**Check 1: train on per-person averages** (`experiments/bag_loss.py`). Fitting every photo to its
+person's one rating equals fitting the person's mean photo code plus a penalty on how much the model's
+scores vary across that person's photos (Javanmard et al., ICLR 2024); that would explain why the full
+model's photo scores are mostly about the person (ICC 0.725). Loss, inputs of the adopted full model:
+sum over people n_p (y_p - w.xbar_p)^2 + rho * sum over photos (w.(x_i - xbar_p))^2 + alpha |w|^2.
+rho = 1 is the current model; rho = 0 is the pure per-person-average loss; rho = 0.25 and 0.5 are
+reported. alpha from {1e3, 3e3, 1e4, 3e4, 1e5} for each rho by person-level CV. Photo scores are
+out-of-fold for training people and from the all-training fit for anyone else.
+Measures: person-level CV Spearman; ICC(1) of the photo scores; the 40 answered photo pairs (share where
+the model's higher-scored photo is the one picked; exact one-sided test on the pairs where rho = 0 and
+rho = 1 pick differently); agreement with the per-photo sexual-attractiveness ratings of both addendum
+rounds within a person (share of a person's differently-rated photo pairs ordered correctly; a different
+question from appearance, so secondary).
+Rule: photo-level scores switch to rho = 0 if (a) photo-pair agreement is higher with one-sided p < 0.05
+on the pairs where the two pick differently, and (b) person-level CV is at most 0.01 below rho = 1. Person
+scores change only if some rho beats rho = 1 by +0.02 CV (the usual rule). With 40 pairs (a) has little
+power; a null result here is weak evidence.
+
+**Check 2: personal weights over a bank of crowd scorers** (`experiments/scorer_bank.py`). Few-rating
+harness of `push_down.py` (20 splits of the training people, 70% pool; herding picks n = 5, 10, 20, 40,
+80 from the pool; scored on the rest). Bank, one number per person, each trained on other people's
+labels: SCUT crowd on CLIP face codes, SCUT crowd on SFace codes, MEBeauty dating crowd (CLIP + SFace),
+LAION aesthetic predictor on the cut-out (mean over photos). Variants: S1, ridge on the 4 standardised
+bank scores in place of the ridge on L-14 codes, same rank blend with the crowd prior (k = 20); S2,
+ridge on L-14 codes plus the bank (the bank block scaled to the codes' total weight), same blend.
+Rule (as `push_down.py`): adopt a variant if its mean gain over n = 5-40 is at least 0.02 and it wins
+in at least 15 of 20 splits at n = 20.
+
+**Check 3: newer image models** (`experiments/new_encoders.py`). The encoders that download without a
+sign-in: Perception Encoder PE-Core-L14-336 (Meta, Apache-2.0), SigLIP 2 SO400M/14 at 378 px (Google,
+Apache-2.0), Sapiens 0.6B pretrained on images of people (Meta, CC BY-NC 4.0). Not tested: DINOv3 (needs
+a manual licence request) and Sapiens2 (weights not available to us). Each embeds the two inputs the
+full model uses (the no-clothing cut-out and the owner-only face crop): the output embedding (PE,
+SigLIP 2) or the mean of the last layer's tokens (Sapiens).
+Rules: (A) full model: person-level CV with the new encoder's two codes added to the adopted full model;
+adopt if at least +0.02 over the current full model on the same folds (the encoder alone is reported).
+(B) few ratings: the `push_down.py` harness with the ridge on the new encoder's person-mean codes in
+place of L-14 (herding unchanged); adopt if the mean gain over n = 5-40 is at least 0.02 and it wins in
+at least 15 of 20 splits at n = 20. The literature suggests +0.01 to +0.04 at most.
+
+**Result, check 1** (job 12438508, `results/bag_loss.json`; 305 people, 2,636 photos). rho = 1 reproduces
+the adopted model (CV 0.676, ICC 0.725). Lowering rho makes a person's photo scores differ more (ICC 0.702
+at rho 0.5, 0.660 at 0.25, 0.608 at 0) and costs person-level accuracy (CV 0.675, 0.674, 0.656). Photo
+pairs: rho = 0 picks the rater's photo in 28 of 40 against 25 of 40; the two pick differently in only 3
+pairs, all won by rho = 0 (one-sided p = 0.125). Sexual attractiveness within a person (secondary): rho = 0
+orders 146 of 211 differently-rated pairs correctly against 135 for rho = 1 (people right / wrong: 97 / 45
+against 88 / 56). **Rule not met**: (a) p = 0.125; (b) person-level CV 0.020 below rho = 1 (limit 0.01).
+Person scores unchanged (no rho gains +0.02).
+Reading: every photo-level measure moves the way the theory predicts when the per-photo penalty is removed
+(ICC down, pairs +3, addendum pairs +11), while person-level accuracy drops 0.02: the penalty trades photo
+detail for person accuracy, as the algebra says. The photo-level gain is not shown with 40 answered pairs.
+
+**Result, check 2** (job 12438509, `results/scorer_bank.json`). Zero-rating Spearman on the training
+people: SCUT crowd on CLIP faces 0.350, on SFace 0.309, MEBeauty dating crowd 0.130, LAION aesthetic 0.201
+(adopted prior 0.386). Few-rating curve at n = 5 / 10 / 20 / 40 / 80: baseline 0.414 / 0.454 / 0.483 /
+0.547 / 0.575; S1 bank only 0.397 / 0.396 / 0.369 / 0.380 / 0.377; S2 codes + bank 0.403 / 0.415 / 0.431 /
+0.502 / 0.577. Gain over n = 5-40: S1 -0.089 (wins 3 of 20 at n = 20), S2 -0.037 (3 of 20). **Not adopted.**
+Reading: re-weighting other people's scorers learns nothing personal; the rater's departure from the crowd
+lies outside what those scorers measure, and from n = 10 on the bank only adds noise to the blend. This
+fits the review's conclusion that the few-rating floor moves only with a prior from raters who differ in
+the rater's own directions.
+
+**Result, check 3** (embedding job 12438628, which wrote `features_newenc.npz` for all 3,526 photos and then
+hit its time limit; evaluation job 12439308, `results/new_encoders.json`). Sapiens' released TorchScript
+only accepts 1024 x 1024 input, so its images were letterboxed on grey to that square.
+(A) Person-level CV (alpha picked from {3e3, 1e4, 3e4}): current full model 0.676; with PE added 0.673
+(-0.003), with SigLIP 2 0.671 (-0.005), with Sapiens 0.672 (-0.005). Alone: PE 0.606, SigLIP 2 0.584,
+Sapiens 0.258. (B) Few-rating curve, n = 5 / 10 / 20 / 40 / 80: L-14 0.414 / 0.454 / 0.483 / 0.547 / 0.575;
+PE 0.404 / 0.435 / 0.441 / 0.518 / 0.548; SigLIP 2 0.409 / 0.450 / 0.462 / 0.516 / 0.559; Sapiens 0.386 /
+0.369 / 0.334 / 0.227 / 0.225. Gain over n = 5-40: PE -0.025 (wins 1 of 20), SigLIP 2 -0.015 (6 of 20),
+Sapiens -0.145 (1 of 20). **None adopted.**
+Reading: newer general encoders carry no taste signal the current codes lack, and alone they are worse;
+Sapiens' mean-pooled features (trained by masked reconstruction, made for dense tasks) hold almost none.
+Untested: Perception Encoder's intermediate layers, which its authors say hold its best features.
+Overall reading of the three checks: as the review predicted, a better loss, a bank of other people's
+scorers and newer encoders do not move the person-level or few-rating results; only per-person-average
+training shifts photo-level behaviour, at a cost in person-level accuracy. The remaining levers need
+different labels (photo-level ratings, later-session repeats, other raters).
+
+## Photo sets and later-session repeats (planned 2026-11-19, 08:05, before picking)
+
+The user, 2026-11-19: "Yes, set it up", one rating round of about 20 minutes with the review's two
+cheapest rating experiments (`experiments/photosets.py`, page `photoset.html`, server `photoset_server.py`;
+served from the cluster, nothing stored on the Mac).
+
+**Repeats in a later session.** 40 pool people drawn at random (seed 20261119) from those rated on
+2026-11-12 and not shown on any page since (onboarding probes, photo pairs, both sexual-attractiveness
+rounds, anchors of the discovery study). Shown as on the first rating page (up to 12 cut-outs on grey, opaque id) and
+rated 0-10 as then. Reported, no pass or fail: Spearman and Pearson with the first rating (bootstrap over
+people), mean change, share within 1 point, and the ceiling sqrt(r). Reading: if the Spearman is under
+0.80, the figures in this protocol that are relative to the ceiling get a note that the ceiling across
+sessions is lower.
+
+**Photo sets: which photo of a person the rater likes.** 80 people drawn at random (seed 20261119) from
+the discovery candidates nobody has rated (both discovery folders: Instagram similar-account suggestions
+collected for a separate study that is not published here) who pass the discovery age screen, are
+not the same person as any pool account (the protocol's SFace rule) and have at least 4 eligible photos
+(one person in the photo; zero-shot "child or teenager" chance under 0.7). 4 of their eligible photos at
+random, shown side by side as cut-outs on grey. On one screen the rater (1) rates the person 0-10 as
+usual, (2) picks the photo they like most, (3) picks the photo they like least. 8 of these screens come
+back at least 30 screens later with the photos in a new order. Skip, "may be under 18" (removes the
+person), Back. Repeats and photo sets in one random order: 128 screens.
+
+**Frozen predictions** (written before the page opens; SHA-256 recorded here): scores of the 4 shown
+photos from the full model trained on all 407 rated pool people, with rho = 1 (the adopted model) and with
+rho = 0 (check 1's per-person-average loss), strength 1e4 for both (check 1's CV choices); the person-level
+prediction is the mean rho = 1 score over the 4 shown photos.
+
+**Rules** (photo sets, first showings, people answered with most-liked != least-liked; scored once):
+P1. The adopted model (rho = 1) scores the most-liked photo above the least-liked one for more people than
+chance: one-sided binomial test against 50%, p < 0.05 (48 or more of 80). Power: about 85% if the true
+rate is 65%, 55% if it is 60%.
+P2. Check 1's second chance: rho = 0 is right for more people than rho = 1 among the people where the two
+disagree (one-sided sign test, p < 0.05), and rho = 0 passes P1. If so, photo-level scores (used only to
+order one person's photos) come from rho = 0; person-level scores stay rho = 1. P2 has little power unless
+the two disagree on many people.
+Also reported: per person, the share of the 5 known orderings (most-liked above the other three, the two
+middle photos above the least-liked) each model gets right; the person-level Spearman between the frozen
+prediction and the new 0-10 ratings (a fresh check on people Instagram suggested, outside the pool), with
+a bootstrap over people; agreement of the most- and least-liked picks on the 8 repeats.
+
+**Record** (2026-11-19, job 12440774, `experiments/photosets.py pick`, before the page opened): repeats
+drawn from 126 rated pool people not shown since; new people from 309 unrated, age-screened discovery
+candidates, taken in the seeded order (1 passed over as the same person as a pool account, 23 for fewer
+than 4 eligible photos) until 80 qualified. 128 screens (40 repeats, 80 photo sets, 8 sets shown again).
+The two models put the same photo on top in 75% of the sets. `results/photosets_pred.json` SHA-256
+`e400c127abfe6a9983d4d74591771b2f3d6a60c01816e563f545f671a0d8e52a`; private map
+`results/photosets_map.json`; page `site_photosets/` on the cluster, answers in `photosets_ratings.jsonl`
+next to it (outside the served folder).
+
+**Result** (2026-11-19, job 12442028, `experiments/photosets.py eval`, scored once; frozen predictions
+checked unchanged first, SHA-256 as recorded). All 128 screens answered: no skips, nobody marked "may be
+under 18". The user, on finishing: "for some of them I don't have a clear favorite or least favorite".
+The page forces a pick, so those sets are close to coin flips; they pull the hit rate toward 50%, which
+works against P1, not for it. Nothing was dropped.
+
+- **Repeats across sessions** (40 pool people, first rated 2026-11-12, re-rated 2026-11-19): Spearman
+  **0.694** [0.495, 0.832], Pearson 0.691; 22 identical, **all 40 within 1 point**, mean change +0.20
+  (mean absolute difference 0.45, vs 0.35 within one session). Ceiling sqrt(0.694) = **0.833**
+  [0.70, 0.91], against 0.932 from the repeats within one session. The 40 sit in a narrow band (37 of
+  40 first rated 5-7, SD 0.86), so one-point moves weigh heavily on the rank figure. For comparison, the
+  next-day re-rating of 40 onboarding people (2026-11-13, picked to be spread out) agreed at 0.854.
+  Reading, by the rule written in the plan: the Spearman is under 0.80, so the ceiling-relative figures
+  above now carry a note. Against the across-session ceiling the main test's 0.668 is 80% of it
+  (0.668 / 0.833), not 72%.
+- **P1, the adopted model (rho = 1) orders one person's photos**: most-liked scored above least-liked
+  for **51 of 80** (63.8%), one-sided binomial p = 0.0092 -> **PASS**. Of the 5 known orderings per
+  person it gets 59.8% right (chance 50%). First direct evidence that the model, trained only on
+  person-level ratings, carries some photo-level taste.
+- **P2, check 1's second chance (rho = 0)**: the two models disagree on most-liked vs least-liked for
+  only **5** of 80 people (they disagree on the top photo for 25%, but rarely on this pair); rho = 0 is
+  right on 1 of the 5, sign test p = 0.97 -> **FAIL** (rho = 0 alone: 48 of 80, 60.0%, p = 0.046; its 5
+  orderings 58.8%). Photo-level scores stay rho = 1. The per-person-average loss is not adopted, now on
+  both chances.
+- **Person level, 80 new people** (Instagram suggestions outside the pool, judged from 4 photos):
+  Spearman between the frozen prediction and the new 0-10 ratings **0.485** [0.265, 0.657]. Mean rating
+  6.28; 27 of 80 rated 7+; 41 rated 6. Lower than the main test's 0.668 (12 photos per person, pool
+  people), with a wide interval.
+- **Sets shown again** (8): same most-liked photo 5 of 8, same least-liked 6 of 8 (chance 2 of 8 each);
+  rating within 1 point for all 8. The user's own picks are clearly above chance but far from fixed,
+  which fits their remark; P1's 64% is measured against a ceiling well below 100%.
+
+Overall: the model does tell which of a person's photos the user likes better, modestly and above chance.
+The per-person-average variant does not do this better. The user's ratings are less stable over a week
+than within a session (0.69 vs 0.87 by rank, though never more than 1 point apart here), so the room
+above the current model is smaller than the 0.93 ceiling suggested.
+
 ## Changes
 
 - 2026-11-12, before any photo was downloaded or rated: pool size set to about 400 accounts
@@ -1476,3 +1654,8 @@ more pairs of the best-vs-worst kind.
   poster's "0.87 ... (ceiling)" label are corrected the same way. The 0.869 itself comes from
   repeats within one session; repeats in a later session may agree less, which would lower the
   ceiling.
+- 2026-11-19, note (no rule, test or result changed), by the rule in "Photo sets and later-session
+  repeats": repeats a week apart agree at Spearman 0.694, under the 0.80 line, so the ceiling-relative
+  figures (the plan's consistency sentence, the main result's 72%, the latent-gaps section's 0.93) now
+  say that the ceiling across sessions is about 0.83, and that 0.668 is 80% of it. The poster's
+  ceiling label now gives both figures.
