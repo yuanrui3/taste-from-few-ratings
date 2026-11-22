@@ -1,5 +1,7 @@
 # Taste from few ratings
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24447448.svg)](https://doi.org/10.5281/zenodo.24447448)
+
 **Learn one person's taste in other people's appearance from about 40 ratings, using open image models.**
 
 Standard facial-beauty prediction learns a *crowd's average* score for a cropped studio face.
